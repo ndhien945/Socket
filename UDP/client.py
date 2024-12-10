@@ -1,4 +1,5 @@
 import socket
+import time 
 import clientConfig # Thêm file clientConfig.py vào thư mục chứa file server.py
 
 '''
@@ -21,13 +22,22 @@ def main():
     host = clientConfig.host
     port = clientConfig.port
     file_path = clientConfig.file_path
-
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # Tạo socket với IPv4 và UDP
-    with open('input.txt', 'r') as input_file: # Mở file ở chế độ đọc
-        for line in input_file: # Đọc từng dòng trong file
-            file_name = line.strip() # Xóa kí tự xuống dòng
-            s.sendto(file_name.encode(), (host, port)) # Gửi tên file
-            receive_file(s, file_path + file_name) # Nhận file
-            print(f"File {file_name} received successfully") # Gửi thông báo đã nhận file thành công
+    
+    processed_line = [] # Khởi tạo list để lưu các dòng đã xử lí
+    
+    while True:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # Tạo socket với IPv4 và UDP
+        with open('input.txt', 'r') as input_file: # Mở file ở chế độ đọc
+            for line in input_file: # Đọc từng dòng trong file
+                if line in processed_line: # Kiểm tra dòng đã được xử lí chưa
+                    continue
+                else:
+                    processed_line.append(line) 
+                file_name = line.strip() # Xóa kí tự xuống dòng
+                s.sendto(file_name.encode(), (host, port)) # Gửi tên file
+                receive_file(s, file_path + file_name) # Nhận file
+                print(f"File {file_name} received successfully") # Gửi thông báo đã nhận file thành công
+        print("Waiting for new files...")
+        time.sleep(5) # Đợi 5 giây trước khi kiểm tra lại file mới
 if __name__ == "__main__":
     main()

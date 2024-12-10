@@ -14,7 +14,7 @@ def send_file(s, addr, file_path): # Hàm gửi file
                 break
             s.sendto(chunk, addr) # Gửi dữ liệu
     s.sendto(b'EOF', addr)  # Gửi tín hiệu kết thúc file
-
+            
 def main():
 
     # Lấy thông tin từ file serverConfig.py
