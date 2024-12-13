@@ -1,0 +1,6 @@
+file1.txt
+meow.txt
+video.mov
+hala
+huge.zip
+superhuge_2g.MOV
