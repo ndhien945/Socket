@@ -9,20 +9,14 @@ Using IPv4
 Coding UDP server
 '''
 
-def send_file(s, addr, file_path): # Hàm gửi file
-    with open(file_path, 'rb') as f: # Mở file ở chế độ đọc nhị phân, with open sẽ tự đóng file sau khi kết thúc block
-        while True:
-            chunk = f.read(1024) # buffer size = 1024
-            if not chunk: # Xử lí trường hợp không còn dữ liệu
-                break
-            s.sendto(chunk, addr) # Gửi dữ liệu
-            data, addr = s.recvfrom(1024 * 16) # Nhận dữ liệu từ client với buffer size = 1024 * 16
-            print(data)
-            if data == b'OK':
-                break
-    print(f"Sent file to {addr}") # Gửi thông báo đã gửi file thành công
-    s.sendto(b'EOF', addr)  # Gửi tín hiệu kết thúc file
-            
+def send_file(s, addr, chunk): # Hàm gửi file
+    while True:
+        s.sendto(chunk, addr) # Gửi dữ liệu
+        data, addr = s.recvfrom(1024 * 16) # Nhận dữ liệu từ client với buffer size = 1024 * 16
+        print(data)
+        if data == b'OK':
+            break
+       
 def main():
 
     # Lấy thông tin từ file serverConfig.py
@@ -47,8 +41,25 @@ def main():
                 continue
             if (file_path + data.decode()) not in processing_line: # Kiểm tra file đã được xử lí chưa
                 processing_line.append(file_path + data.decode()) # Thêm file đã xử lí vào list
-            for _ in range(4): # Tạo 4 luồng song song để gửi file  
-                threading.Thread(target=send_file, args=(s, addr, file_path + data.decode())).start() # Gọi hàm gửi file
+            
+            with open(file_path  + data.decode(), 'rb') as f: # Mở file ở chế độ đọc nhị phân, with open sẽ tự đóng file sau khi kết thúc block
+                checker = True
+                while checker:
+                    threads = [] # Khởi tạo list để lưu các thread        
+                    for _ in range(4): # Tạo 4 luồng song song để gửi file  
+                        chunk = f.read(1024 * 16)
+                        if not chunk:
+                            checker = False
+                            break
+                        thread = threading.Thread(target=send_file, args=(s, addr, chunk)) # Gọi hàm gửi file
+                        threads.append(thread)
+                        thread.start()
+                        
+                    for t in threads: # Chờ tất cả các thread kết thúc
+                        t.join()
+                
+            print(f"Sent file to {addr}") # Gửi thông báo đã gửi file thành công
+            s.sendto(b'EOF', addr)  # Gửi tín hiệu kết thúc file
         time.sleep(5) # Đợi 5 giây trước khi kiểm tra lại file input.txt
         
         # Trường hợp processing_line quá lớn, có thể xóa đi để giảm bộ nhớ
