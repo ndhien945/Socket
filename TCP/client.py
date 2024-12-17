@@ -6,13 +6,16 @@ import signal
 import sys
 from rich.progress import Progress, BarColumn, TextColumn
 
-server_host = "127.0.0.1"
-server_port = 8080
+SERVER_HOST = "127.0.0.1"
+# SERVER_HOST = "192.168.2.7"
+SERVER_PORT = 8080
+buffer_size = 1024
+input_file = "input.txt"
+output_dir = "./downloads"
 downloaded_files = set()
 
 
 # TODO: Reduce the number of parameters passed to the function
-
 def download_chunk(file_name, offset, chunk_size, part_num, output_dir, progress, task_id):
     max_retries = 5
     retry_delay = 3  # seconds
@@ -20,7 +23,7 @@ def download_chunk(file_name, offset, chunk_size, part_num, output_dir, progress
     for attempt in range(max_retries):
         try:
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_socket.connect((server_host, server_port))
+            client_socket.connect((SERVER_HOST, SERVER_PORT))
             client_ip, client_port = client_socket.getsockname()
             print(f"[INFO] Client IP: {client_ip}, Client Port: {client_port} for part {part_num + 1}")
             
@@ -34,7 +37,7 @@ def download_chunk(file_name, offset, chunk_size, part_num, output_dir, progress
             with open(part_file_path, "wb") as f:
                 total_received = 0  # Track how many bytes have been received
                 while True:
-                    data = client_socket.recv(128)
+                    data = client_socket.recv(buffer_size)
                     if not data:
                         break
                     elif data == b"FILE_NOT_FOUND":
@@ -59,7 +62,7 @@ def download_chunk(file_name, offset, chunk_size, part_num, output_dir, progress
     # Explicitly notify the server when closing the connection due to failure (open new socket to send message)
     try:
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.connect((server_host, server_port))
+        client.connect((SERVER_HOST, SERVER_PORT))
         client_socket.sendall(b"CLOSE CONNECTION")
     except Exception as e:
         print(f"[ERROR] Unable to notify server: {e}")
@@ -106,7 +109,7 @@ def is_file_downloaded(file_name, output_dir):
     output_file = os.path.join(output_dir, file_name)
     return os.path.exists(output_file)
 
-def download_file(server_host, server_port, file_name, file_size, chunk_size, output_dir):
+def download_file(file_name, file_size, output_dir):
     # Check if the file already exists
     if is_file_downloaded(file_name, output_dir):
         print(f"[CLIENT][NOTIFICATION] {file_name} already exists in {output_dir}. Skipping download.")
@@ -183,9 +186,13 @@ def read_file_to_list(file_path):
 
 
 # Monitor `input.txt` for new files and download them
-def monitor_and_download(input_file, output_dir):
+def monitor_and_download():
     global downloaded_files
 
+    # Create the output directory if it does not exist
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
     # Define a signal handler to handle Ctrl+C gracefull
     def signal_handler(signum, frame):
         print("\n[CLIENT][INFO] Shutting down monitoring... Goodbye!")
@@ -194,10 +201,8 @@ def monitor_and_download(input_file, output_dir):
     # Register the signal handler for SIGINT (Ctrl+C)
     signal.signal(signal.SIGINT, signal_handler)
 
-    # for i in range(5):
-    i = 0
+    # numberAttempts = 0
     while True:
-        print(f"[CLIENT][INFO] Monitoring for new files... (Attempt {i + 1})")
         try:
             # Read the input file and check for new files
             file_list = read_file_to_list(input_file)
@@ -208,12 +213,12 @@ def monitor_and_download(input_file, output_dir):
                 # Check if the file has already been downloaded
                 if file_name not in downloaded_files:
                     print(f"[CLIENT][NOTIFICATION] New file detected: {file_name}")
-                    download_file(server_host, server_port, file_name, file_size, 0, output_dir)
+                    download_file(file_name, file_size, output_dir)
                     downloaded_files.add(file_name)
         except Exception as e:
             print(f"[CLIENT][ERROR] Failed to process input file: {e}")
 
-        i += 1
+        # numberAttempts += 1
         print("[CLIENT][INFO] Waiting for new request of downloading new file(s)...")
         time.sleep(5)  # Check for new files every 5 seconds
 
@@ -221,47 +226,4 @@ def monitor_and_download(input_file, output_dir):
 # Download multiple files from the server
 # TODO: Modify code to serve numparts = 4 (not the fixed chunk size)
 if __name__ == "__main__":
-    file_path = "input.txt"
-    file_list = read_file_to_list(file_path)
-    chunk_size = 1000 # TODO: Adjust the chunk size as needed
-    output_dir = "./downloads"
-
-    os.makedirs(output_dir, exist_ok=True)
-
-
-    monitor_and_download(file_path, output_dir)
-
-    # for file_info in file_list:
-    #     file_name = file_info["name"]
-    #     file_size = file_info["size"]
-    #     download_file(server_host, server_port, file_name, file_size, chunk_size, output_dir)
-# if __name__ == "__main__":
-#     file_path = "input.txt"
-#     output_dir = "./downloads"
-#     os.makedirs(output_dir, exist_ok=True)
-
-#     downloaded_files = set()
-
-#     while True:
-#         file_list = read_file_to_list(file_path)
-#         for file_info in file_list:
-#             file_name = file_info["name"]
-#             file_size = file_info["size"]
-#             if file_name not in downloaded_files:
-#                 download_file(server_host, server_port, file_name, file_size, chunk_size=None, output_dir=output_dir)
-#                 downloaded_files.add(file_name)
-#         time.sleep(5)
-
-
-
-
-
-# # file_list = [
-#     #     {"name": "file1.txt", "size": 140},  # Replace with actual file sizes
-#     #     {"name": "hala", "size": 47},
-#     #     {"name": "huge.zip", "size": 13325},
-#     #     {"name": "superhuge_2g.MOV", "size": 2301684714},
-#     #     {"name": "video.mov", "size": 41064525},
-#     #     {"name": "200MB.zip", "size": 209715200},
-#     #     {"name": "512MB.zip", "size": 536870912}
-#     # ]
+    monitor_and_download()
