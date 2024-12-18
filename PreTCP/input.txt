@@ -1,0 +1,4 @@
+file1.txt 140
+hala 47
+huge.zip 13325
+
