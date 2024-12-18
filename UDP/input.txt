@@ -1,3 +1,4 @@
-moving.txt
-moving2.txt
-5MB.zip
+file1.txt 22639
+video.mov 41064525
+200MB.zip 209715200
+superhuge_2g.MOV 2301684714
