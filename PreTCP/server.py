@@ -3,8 +3,8 @@ import threading
 import os
 import sys
 import signal
-
 from msg import *
+
 HOST_ADDR = "0.0.0.0"
 PORT_NUM = 8080
 input_dir = "server_files"
@@ -20,11 +20,11 @@ def handle_client(connection_socket, input_dir, addr):
             print("[SERVER] Empty request received.")
 
         # Handle the CLOSE protocol
-        elif request.startswith(MESSAGE_CLOSE_CONNECTION):
+        elif request.startswith(CLOSE_CONNECTION):
             print("[SERVER] Client requested to close the connection.")
             
         # Handle the GET protocol
-        elif request.startswith(MESSAGE_GET_REQUEST):
+        elif request.startswith(GET_REQUEST):
             _, file_name, offset, chunk_size = request.split()
             offset = int(offset)
             chunk_size = int(chunk_size)
@@ -38,7 +38,7 @@ def handle_client(connection_socket, input_dir, addr):
                     data = f.read(chunk_size)  # Read the specified chunk
                     connection_socket.sendall(data)
             else:
-                connection_socket.sendall(MESSAGE_FILE_NOT_FOUND)
+                connection_socket.sendall(FILE_NOT_FOUND)
     finally:
         _connection_ip, _connection_port = addr
         print(f"[SERVER] Closing the connection of {_connection_ip}:{_connection_port}.")

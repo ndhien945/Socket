@@ -32,7 +32,7 @@ def download_chunk(file_name, offset, chunk_size, part_num, output_dir, progress
             
 
             # Send the GET request with file name, offset, and chunk size
-            request = MESSAGE_GET_REQUEST + str(file_name) + " " + str(offset) + " " + str(chunk_size)
+            request = f"{GET_REQUEST} {file_name} {offset} {chunk_size}"
             client_socket.send(request.encode('utf-8'))
 
             # Save the chunk to a file and calculate progress
@@ -215,7 +215,7 @@ def monitor_and_download():
 
                 # Check if the file has already been downloaded
                 if file_name not in downloaded_files:
-                    print(f"[CLIENT][!] New file detected: {file_name}")
+                    print(f"[!] New file detected: {file_name}")
                     download_file(file_name, file_size, output_dir)
                     downloaded_files.add(file_name)
         except Exception as e:

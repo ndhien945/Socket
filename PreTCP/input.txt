@@ -1,4 +1,2 @@
-file1.txt 140
-hala 47
-huge.zip 13325
-
+file1.txt 22639
+video.mov 41064525
