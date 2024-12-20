@@ -1,244 +1,191 @@
 # client.py
-import socket
 import os
-import threading
-import hashlib
+import socket
+import time
 import signal
 import sys
-import time
 from rich.progress import Progress, BarColumn, TextColumn
-import struct
 
+from helper import mk_chksum, mk_packet, notcorrupt, switch_seq, send_pkt, has_seq, unpacker, extract, BUFFER_SIZE
 
+# Client Configuration
+
+# Configuration
 SERVER_HOST = "127.0.0.1"
-SERVER_PORT = 8080
-# BUFFER_SIZE = 2048
-BUFFER_SIZE = 8192
-# BUFFER_SIZE = 12288
-# BUFFER_SIZE = 16384
+SERVER_PORT = 5000
+INPUT_FILE = "input.txt"
+OUTPUT_DIR = "./downloads"
 downloaded_files = set()
 
+interval = 0.009  # Timeout interval
+expected_seq = 0  # Sequence number
+ack_msg = b"ACK__ACK"
 
-def calculate_checksum(data):
-    """Calculate MD5 checksum for data."""
-    return hashlib.md5(data).hexdigest()
 
-
-# # using struct
-# def download_chunk(file_name, offset, chunk_size, part_num, output_dir, progress, task_id):
-#     """Download a file chunk using error detection protocol."""
-#     retries = 20
-#     total_received = 0
-#     part_file_path = os.path.join(output_dir, f"{file_name}.part_{part_num + 1}")
-
-#     while retries > 0:
-#         try:
-#             client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-#             client_socket.settimeout(10)
-
-#             request = f"GET {file_name} {offset} {chunk_size}"
-#             client_socket.sendto(request.encode('utf-8'), (SERVER_HOST, SERVER_PORT))
-
-#             with open(part_file_path, "wb") as f:
-#                 while total_received < chunk_size:
-#                     packet, _ = client_socket.recvfrom(BUFFER_SIZE + 50)
-
-#                     # # Unpack data using struct: [Payload size (I), Checksum length (I), Checksum (variable), Payload (variable)]
-#                     # payload_size = struct.unpack('!I', packet[:4])[0]
-#                     # checksum_length = struct.unpack('!I', packet[4:8])[0]
-#                     # checksum = packet[8:8 + checksum_length].decode()
-#                     # data = packet[8 + checksum_length:8 + checksum_length + payload_size]
-#                     # Unpack the data
-#                     payload_size, checksum_length = struct.unpack('!II', packet[:8])
-#                     checksum = struct.unpack(f'!{checksum_length}s', packet[8:8 + checksum_length])[0]
-#                     data = struct.unpack(f'!{payload_size}s', packet[8 + checksum_length:8 + checksum_length + payload_size])[0]
-
-#                     if calculate_checksum(data) == checksum.decode():
-#                         remaining_size = chunk_size - total_received
-#                         data_to_write = data[:remaining_size]
-
-#                         f.write(data_to_write)
-#                         total_received += len(data_to_write)
-#                         progress.update(task_id, completed=total_received)
-#                         client_socket.sendto(b"OK", (SERVER_HOST, SERVER_PORT))
-
-#                         if total_received >= chunk_size:
-#                             break
-#                     else:
-#                         client_socket.sendto(b"ERROR", (SERVER_HOST, SERVER_PORT))
-#                         print(f"[CLIENT] Checksum mismatch. Requesting resend...")
-#                         break
-#             return
-#         except socket.timeout:
-#             print(f"[CLIENT] Timeout. Retrying chunk {part_num + 1}...")
-#         finally:
-#             client_socket.close()
-#         retries -= 1
-
-#     print(f"[ERROR] Failed to download part {part_num + 1} after retries.")
-
-# not using struct
-def download_chunk(file_name, offset, chunk_size, part_num, output_dir, progress, task_id):
-    """Download a file chunk using error detection protocol."""
+def download_chunk(client_socket, file_name, offset, chunk_size, part_num, progress, task_id):
+    """Download a file chunk using RDT 3.0."""
+    global expected_seq
     retries = 20
     total_received = 0
-    part_file_path = os.path.join(output_dir, f"{file_name}.part_{part_num + 1}")
+    part_file_path = f"{OUTPUT_DIR}/{file_name}.part_{part_num + 1}"
 
-    while retries > 0:
-        try:
-            # Each chunk download uses its own socket
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    with open(part_file_path, "wb") as f:
+        while retries > 0:
+            try:
+                data = f"GET {file_name} {offset} {chunk_size}".encode("utf-8")
+                chksum = mk_chksum((0, expected_seq, data))
+                packet = mk_packet((0, expected_seq, data, chksum))
 
-            # TODO: know what this does?
-            client_socket.settimeout(7)
-
-            request = f"GET {file_name} {offset} {chunk_size}"
-            client_socket.sendto(request.encode('utf-8'), (SERVER_HOST, SERVER_PORT))
-
-            with open(part_file_path, "wb") as f:
+                # Send the packet for the first time
+                send_pkt(client_socket, packet, (SERVER_HOST, SERVER_PORT))
+                
+                # Receive data
                 while total_received < chunk_size:
-                    packet, _ = client_socket.recvfrom(BUFFER_SIZE + 50)
-                    if b'CHECKSUM:' in packet:
-                        data, checksum = packet.rsplit(b'CHECKSUM:', 1)
-                        if calculate_checksum(data) == checksum.decode():
-                            # Calculate remaining chunk size
-                            remaining_size = chunk_size - total_received
-                            data_to_write = data[:remaining_size]
+                    # response, _ = client_socket.recvfrom(BUFFER_SIZE)
+                    response, _ = client_socket.recvfrom(BUFFER_SIZE + 32 + 4 + 4)
+                    rcvd_packet = unpacker.unpack(response)
+                    # Check if the recieved packet has been corrupted and has the correct sequence number
+                    if notcorrupt(rcvd_packet) and has_seq(rcvd_packet, expected_seq):
+                        remaining_size = chunk_size - total_received
+                        data = extract(rcvd_packet)
+                        # print("data IS THIS: ", data)
+                        data_to_write = data[:remaining_size]
+                        f.write(data_to_write)
+                        total_received += len(data_to_write)
+                        progress.update(task_id, completed=total_received)
 
-                            f.write(data_to_write)
-                            total_received += len(data_to_write)
-                            progress.update(task_id, completed=total_received)
-                            client_socket.sendto(b"OK", (SERVER_HOST, SERVER_PORT))
 
-                            if total_received >= chunk_size:
-                                break
-                        else:
-                            client_socket.sendto(b"ERROR", (SERVER_HOST, SERVER_PORT))
-                            print(f"[CLIENT] Checksum mismatch. Requesting resend...")
-                            break
+                        # Acknowledge reception
+                        chksum = mk_chksum((1, expected_seq, ack_msg))
+                        ack_packet = mk_packet((1, expected_seq, ack_msg, chksum))
+                        send_pkt(client_socket, ack_packet, (SERVER_HOST, SERVER_PORT))
+                        expected_seq = switch_seq(expected_seq)
                     else:
-                        print(f"[CLIENT] Invalid packet format.")
+                        chksum = mk_chksum((1, switch_seq(expected_seq), ack_msg))
+                        packet = mk_packet((1, switch_seq(expected_seq), ack_msg, chksum))
+                        send_pkt(packet, (SERVER_HOST, SERVER_PORT))
+                        print("[CLIENT] Checksum mismatch or wrong sequence. Retrying...")
+                        retries -= 1
                         break
-            return
-        except socket.timeout:
-            print(f"[CLIENT] Timeout. Retrying chunk {part_num + 1}...")
-        finally:
-            client_socket.close()
-        retries -= 1
-
+                return
+            except socket.timeout:
+                retries -= 1
+                print("[CLIENT] Timeout. Retrying...")
     print(f"[ERROR] Failed to download part {part_num + 1} after retries.")
 
 
-def merge_chunks(file_name, num_parts, output_dir):
+def merge_chunks(file_name, num_parts):
     """Merge downloaded chunks into the final file."""
-    output_file = os.path.join(output_dir, file_name)
+    output_file = os.path.join(OUTPUT_DIR, file_name)
     with open(output_file, "wb") as final_file:
         for i in range(num_parts):
-            part_file_path = os.path.join(output_dir, f"{file_name}.part_{i + 1}")
+            part_file_path = f"{OUTPUT_DIR}/{file_name}.part_{i + 1}"
             with open(part_file_path, "rb") as part_file:
                 final_file.write(part_file.read())
             os.remove(part_file_path)
     print(f"[INFO] Successfully merged file: {output_file}")
 
 
-def is_file_downloaded(file_name, output_dir):
-    """Check if the file already exists in the output directory."""
-    output_file = os.path.join(output_dir, file_name)
+def is_file_downloaded(file_name):
+    """
+    Check if the file already exists in the output directory.
+    Returns:
+        bool: True if the file exists, False otherwise.
+    """
+    output_file = os.path.join(OUTPUT_DIR, file_name)
     return os.path.exists(output_file)
 
-
 def download_file(file_name, file_size, output_dir):
-    if is_file_downloaded(file_name, output_dir):
-        print(f"[CLIENT][NOTIFICATION] {file_name} already exists. Skipping download.")
-        return
+     # Check if the file already exists
+    if is_file_downloaded(file_name):
+        print(f"[CLIENT][NOTIFICATION] {file_name} already exists in {output_dir}. Skipping download.")
+        print("\n")
+        print("\n")
+        return  # Skip download if file already exists
 
+
+    """Download a file by splitting it into parts."""
     num_parts = 4
     chunk_size = file_size // num_parts
     last_chunk_size = file_size - (chunk_size * (num_parts - 1))
 
-    threads = []
-    with Progress(
-        TextColumn("[bold blue]{task.fields[filename]}"),
-        BarColumn(),
-        TextColumn("{task.completed}/{task.total} bytes ({task.percentage:>3.0f}%)"),
-    ) as progress:
-        tasks = []
+    # Create and reuse a single socket for all chunks
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client_socket:
+        client_socket.settimeout(5)
+
+        with Progress(
+            TextColumn("[bold blue]{task.fields[filename]}"),
+            BarColumn(),
+            TextColumn("{task.completed}/{task.total} bytes ({task.percentage:>3.0f}%)"),
+        ) as progress:
+            tasks = []
+            for part_num in range(num_parts):
+                part_chunk_size = last_chunk_size if part_num == num_parts - 1 else chunk_size
+                task_id = progress.add_task(
+                    f"Downloading {file_name} part {part_num + 1}",
+                    filename=f"{file_name} part {part_num + 1}",
+                    total=part_chunk_size,
+                    completed=0,
+                )
+                tasks.append((part_num, part_chunk_size, task_id))
+
+            for part_num, part_chunk_size, task_id in tasks:
+                offset = part_num * chunk_size
+                download_chunk(client_socket, file_name, offset, part_chunk_size, part_num, progress, task_id)
         
-        # Initialize progress tasks for all parts
-        for part_num in range(num_parts):
-            part_chunk_size = last_chunk_size if part_num == num_parts - 1 else chunk_size
-            task_id = progress.add_task(
-                f"Downloading {file_name} part {part_num + 1}",
-                filename=f"{file_name} part {part_num + 1}",
-                total=part_chunk_size,
-                completed=0,
-            )
-            tasks.append(task_id)
+        # Close the socket
+        data = f"CLOSE".encode("utf-8")
+        chksum = mk_chksum((0, expected_seq, data))
+        packet = mk_packet((0, expected_seq, data, chksum))
+                           
+        # Send the packet for the first time
+        send_pkt(client_socket, packet, (SERVER_HOST, SERVER_PORT))
+        client_socket.close()
 
-        # Start all threads simultaneously
-        for part_num in range(num_parts):
-            part_chunk_size = last_chunk_size if part_num == num_parts - 1 else chunk_size
-            offset = part_num * chunk_size
-            task_id = tasks[part_num]
-
-            # Start a separate thread for each part
-            t = threading.Thread(
-                target=download_chunk,
-                args=(file_name, offset, part_chunk_size, part_num, output_dir, progress, task_id),
-                daemon=True  # Set threads as daemon to ensure cleanup on termination
-            )
-            t.start()
-            threads.append(t)
-
-        # Wait for all threads to finish
-        for t in threads:
-            t.join()
-
-    # Merge downloaded chunks after all parts finish
-    merge_chunks(file_name, num_parts, output_dir)
+    merge_chunks(file_name, num_parts)
 
 def read_file_to_list(file_path):
     file_list = []
-    with open(file_path, "r") as f:
+    with open(file_path, 'r') as f:
         for line in f:
             name, size = line.strip().split()
             file_list.append({"name": name, "size": int(size)})
     return file_list
 
-
-def monitor_and_download(input_file, output_dir):
+# Monitor `input.txt` for new files and download them
+def monitor_and_download():
     global downloaded_files
 
+    # Create the output directory if it does not exist
+    if not os.path.exists(OUTPUT_DIR):
+        os.makedirs(OUTPUT_DIR)
+    
+    # Define a signal handler to handle Ctrl+C gracefull
     def signal_handler(signum, frame):
         print("\n[CLIENT][INFO] Shutting down monitoring... Goodbye!")
-        sys.exit(0)
+        sys.exit(0)  # Exit the program
 
+    # Register the signal handler for SIGINT (Ctrl+C)
     signal.signal(signal.SIGINT, signal_handler)
 
-    i = 0
     while True:
-        print(f"[CLIENT][INFO] Monitoring for new files... (Attempt {i + 1})")
         try:
-            file_list = read_file_to_list(input_file)
+            # Read the input file and check for new files
+            file_list = read_file_to_list(INPUT_FILE)
             for file_info in file_list:
                 file_name = file_info["name"]
                 file_size = file_info["size"]
 
+                # Check if the file has already been downloaded
                 if file_name not in downloaded_files:
                     print(f"[CLIENT][NOTIFICATION] New file detected: {file_name}")
-                    download_file(file_name, file_size, output_dir)
+                    download_file(file_name, file_size, OUTPUT_DIR)
                     downloaded_files.add(file_name)
         except Exception as e:
             print(f"[CLIENT][ERROR] Failed to process input file: {e}")
 
-        i += 1
-        print("[CLIENT][INFO] Waiting for new requests...")
-        time.sleep(5)
-
+        print("[CLIENT][INFO] Waiting for new request of downloading new file(s)...")
+        time.sleep(5)  # Check for new files every 5 seconds
 
 if __name__ == "__main__":
-    output_dir = "./downloads"
-    os.makedirs(output_dir, exist_ok=True)
-
-    input_file = "input.txt"
-    monitor_and_download(input_file, output_dir)
+    monitor_and_download()

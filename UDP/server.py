@@ -1,176 +1,121 @@
 # server.py
-# chạy được với buffer_size nhỏ xíu
 import socket
 import os
-import hashlib
-import sys
 import signal
-import threading
+import sys
+from helper import mk_chksum, mk_packet, notcorrupt, switch_seq, has_seq, unpacker, extract, BUFFER_SIZE
 
-import mmap
-from concurrent.futures import ThreadPoolExecutor
-import struct
-
+# Server Configuration
 HOST_ADDR = "0.0.0.0"
-PORT_NUM = 8080
-input_dir = "server_files"
-# BUFFER_SIZE = 2048 # 2KB
-BUFFER_SIZE = 8192 # 8KB
-# BUFFER_SIZE = 16384 # 16KB
+PORT_NUM = 5000
+BUFFER_SIZE = 1024 * 8
+INPUT_DIR = "server_files"
 
+# Global Sequence Number
+expected_seq = 0
 
-def calculate_checksum(data):
-    """Calculate MD5 checksum for data."""
-    return hashlib.md5(data).hexdigest()
+def send_pkt(server_sock, UDP_Packet, addr):
+    """Send a packet to the client."""
+    server_sock.sendto(UDP_Packet, addr)
+    # print(f"[SERVER] Sent packet: {unpacker.unpack(UDP_Packet)}")
+def isAck(rcvdPacket, num):
 
+    #if rcvdPacket is an ack and has the required sequence number
+    if rcvdPacket[0] == 1 and rcvdPacket[1] == num:
+        # print("Recieved acknowldegment with correct seq num", num)
+        return True
+    else:
+        # print("Recieved acknowldegment with incorrect seq num", switch_seq(num))
+        return False
 
-# def send_file_error_protocol(server_socket, client_addr, file_path, offset, chunk_size):
-#     """Send file chunks with error detection using checksum."""
-#     with open(file_path, 'rb') as f:
-#         mapped_file = mmap.mmap(f.fileno(), length=0, access=mmap.ACCESS_READ)
-#         mapped_file.seek(offset)
-#         total_sent = 0
+def listen_for_ack(server_sock):
+    """Listen for an acknowledgment."""
+    global expected_seq
+    while True:
+        try:
+            data, _ = server_sock.recvfrom(BUFFER_SIZE + 32 + 4 + 4)
+            rcvd_packet = unpacker.unpack(data)
+            if notcorrupt(rcvd_packet) and isAck(rcvd_packet, expected_seq):
+                # print(f"[SERVER] Received valid ACK for seq {expected_seq}.")
+                expected_seq = switch_seq(expected_seq)  # Toggle sequence
+                return True
+            else:
+                print(f"[SERVER] Invalid ACK or corruption detected. Resending data.")
+        except socket.timeout:
+            print("[SERVER] ACK timeout. Resending data.")
+            print('\n')
+            return False
 
-#         while total_sent < chunk_size:
-#             remaining_size = chunk_size - total_sent
-#             data = mapped_file.read(min(BUFFER_SIZE, remaining_size))
-#             if not data:
-#                 break
-
-#             checksum = calculate_checksum(data)
-#             checksum_bytes = checksum.encode()
-#             # Pack data: [Payload size, Checksum size, Checksum, Payload]
-#             packet = struct.pack(f'!II{len(checksum_bytes)}s{len(data)}s', len(data), len(checksum_bytes), checksum_bytes, data)
-
-#             server_socket.sendto(packet, client_addr)
-#             print(f"[SERVER] Sent {len(data)} bytes with checksum {checksum} to {client_addr}.")
-
-#             try:
-#                 server_socket.settimeout(10)
-#                 response, _ = server_socket.recvfrom(BUFFER_SIZE)
-#                 if response.decode() == "OK":
-#                     print(f"[SERVER] Client {client_addr} confirmed successful reception.")
-#                     total_sent += len(data)
-#                 elif response.decode() == "ERROR":
-#                     print(f"[SERVER] Client {client_addr} reported error. Resending data...")
-#             except socket.timeout:
-#                 print(f"[SERVER] Timeout waiting for client confirmation. Resending data...")
-
-# not using struct
-def send_file_error_protocol(server_socket, client_addr, file_path, offset, chunk_size):
-    """Send file chunks with error detection using checksum."""
-    # with open(file_path, 'rb') as f:
-    #     f.seek(offset)
-    #     total_sent = 0
-
-    #     while total_sent < chunk_size:
-    #         remaining_size = chunk_size - total_sent
-    #         data = f.read(min(BUFFER_SIZE, remaining_size))
-
-    # File Reading with Memory Mapping
-    # Memory-mapping the file allows for efficient random access
-    # and avoids reading the entire file into memory
+def send_file_rdt(server_sock, addr, file_path, offset, chunk_size):
+    """Send file chunks using RDT 3.0 protocol."""
+    global expected_seq
     with open(file_path, 'rb') as f:
-        # Memory-map the file for efficient random access
-        mapped_file = mmap.mmap(f.fileno(), length=0, access=mmap.ACCESS_READ)
-        mapped_file.seek(offset)
+        f.seek(offset)
         total_sent = 0
 
         while total_sent < chunk_size:
             remaining_size = chunk_size - total_sent
-            data = mapped_file.read(min(BUFFER_SIZE, remaining_size))
+            data = f.read(min(BUFFER_SIZE, remaining_size))
             if not data:
                 break
 
-            checksum = calculate_checksum(data)
-            packet = data + b'CHECKSUM:' + checksum.encode()
+            chksum = mk_chksum((0, expected_seq, data))
+            packet = mk_packet((0, expected_seq, data, chksum))
 
-            # Send the packet
-            server_socket.sendto(packet, client_addr)
-            print(f"[SERVER] Sent {len(data)} bytes with checksum {checksum} to {client_addr}.")
-
-            try:
-                # Wait for client response
-                server_socket.settimeout(2)
-                response, _ = server_socket.recvfrom(BUFFER_SIZE)
-                if response.decode() == "OK":
-                    print(f"[SERVER] Client {client_addr} confirmed successful reception.")
+            # Send packet and wait for acknowledgment
+            while True:
+                send_pkt(server_sock, packet, addr)
+                if listen_for_ack(server_sock):  # Wait for valid acknowledgment
                     total_sent += len(data)
-                elif response.decode() == "ERROR":
-                    print(f"[SERVER] Client {client_addr} reported error. Resending data...")
-            except socket.timeout:
-                print(f"[SERVER] Timeout waiting for client confirmation. Resending data...")
+                    print(f"[SERVER] Sent {len(data)} bytes. Total sent: {total_sent}/{chunk_size}")
+                    break  # Proceed to next data chunk
 
-
-def handle_client_request(request, client_addr, server_socket):
+def handle_client_request(request, addr, server_sock):
     """Handle client requests."""
-    try:
-        if request.startswith("GET"):
-            _, file_name, offset, chunk_size = request.split()
-            offset = int(offset)
-            chunk_size = int(chunk_size)
+    if request.startswith("GET"):
+        _, file_name, offset, chunk_size = request.split()
+        offset = int(offset)
+        chunk_size = int(chunk_size)
 
-            file_path = os.path.join(input_dir, file_name)
-            if os.path.exists(file_path):
-                print(f"[SERVER] Sending file '{file_name}' to {client_addr}")
-                send_file_error_protocol(server_socket, client_addr, file_path, offset, chunk_size)
-            else:
-                server_socket.sendto(b"FILE_NOT_FOUND", client_addr)
-                print(f"[SERVER] File '{file_name}' not found.")
-        elif request.startswith("CLOSE"):
-            print(f"[SERVER] Client {client_addr} requested to close the connection.")
-    except Exception as e:
-        print(f"[SERVER] Error handling request from {client_addr}: {e}")
-
-
-def client_handler_thread(request, client_addr, server_socket):
-    """Threaded handler for each client request."""
-    print(f"[SERVER] Starting thread for {client_addr}")
-    handle_client_request(request, client_addr, server_socket)
-    print(f"[SERVER] Finished handling request from {client_addr}")
+        file_path = os.path.join(INPUT_DIR, file_name)
+        if os.path.exists(file_path):
+            print(f"[SERVER] Handling file request: {file_name}")
+            send_file_rdt(server_sock, addr, file_path, offset, chunk_size)
+        else:
+            server_sock.sendto(b"FILE_NOT_FOUND", addr)
+            print(f"[SERVER] File '{file_name}' not found.")
+    elif request.startswith("CLOSE"):
+        print(f"[SERVER] Client {addr} requested to close the connection.")
 
 # Handle the server shutdown gracefully
 def shutdown_server(signal, frame):
     print("\n[SERVER] Shutting down the server...")
-    server_socket.close()  # Close the server socket
+    server_sock.close()  # Close the server socket
     sys.exit(0)  # Exit the program
 
 def start_server():
-    global server_socket
-    """Start the UDP server."""
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    server_socket.bind((HOST_ADDR, PORT_NUM))
+    global server_sock
+    """Start the RDT 3.0 UDP server."""
+    os.makedirs(INPUT_DIR, exist_ok=True)
+    server_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    server_sock.bind((HOST_ADDR, PORT_NUM))
+    server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1024 * 1024 * 8)
+    server_sock.settimeout(2)  # Timeout for retransmissions
     print(f"[SERVER] UDP server listening on {HOST_ADDR}:{PORT_NUM}")
+    print("\n")
 
-    if not os.path.exists(input_dir):
-        os.makedirs(input_dir)
     while True:
         try:
-            request, client_addr = server_socket.recvfrom(BUFFER_SIZE)
-            request = request.decode('utf-8')
-            print(f"[SERVER] Received request from {client_addr}: {request}")
-
-            # # Handle each request in a new thread
-            # thread = threading.Thread(target=client_handler_thread, args=(request, client_addr, server_socket, input_dir))
-            # thread.start()
-
-            # Handle each request in a thread pool
-            # This is more efficient than creating a new thread for each request
-            # as it reuses existing threads
-            # The number of threads can be adjusted as needed based on the server load
-            # The ThreadPoolExecutor will automatically manage the thread pool
-            # and reuse threads for new requests
-            # Adjust the number of threads as needed
-            
-            executor = ThreadPoolExecutor(max_workers=10)  # Adjust the number of threads as needed
-            executor.submit(client_handler_thread, request, client_addr, server_socket)
+            request, addr = server_sock.recvfrom(BUFFER_SIZE + 32 + 4 + 4)
+            rcvd_packet = unpacker.unpack(request)
+            if notcorrupt(rcvd_packet) and has_seq(rcvd_packet, expected_seq):
+                data = extract(rcvd_packet).rstrip(b'\x00').decode("utf-8")
+                handle_client_request(data, addr, server_sock)
+        except socket.timeout:
+            continue
         except Exception as e:
             print(f"[SERVER] Server error: {e}")
 
-
 if __name__ == "__main__":
-    # Register the shutdown signal handler for graceful server shutdown
     signal.signal(signal.SIGINT, shutdown_server)
-    # os.makedirs(input_dir, exist_ok=True)
-
     start_server()

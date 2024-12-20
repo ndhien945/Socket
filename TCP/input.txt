@@ -1,6 +1,0 @@
-file1.txt 140
-hala 47
-huge.zip 13325
-video.mov 41064525
-200MB.zip 209715200
-superhuge_2g.MOV 2301684714
