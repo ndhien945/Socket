@@ -4,10 +4,8 @@ import os
 import sys
 import signal
 
-HOST_ADDR = "0.0.0.0"
-PORT_NUM = 8080
-input_dir = "server_files"
-buffer_size = 1024 * 32
+from msg import *
+from config.server_config import *
 
 
 # Handle each client request
@@ -16,14 +14,14 @@ def handle_client(connection_socket, input_dir, addr):
         # Receive the client's request
         request = connection_socket.recv(buffer_size).decode('utf-8')
         if not request:
-            print("[SERVER] Empty request received.")
+            print("[!] Empty request received.")
 
         # Handle the CLOSE protocol
-        elif request.startswith("CLOSE"):
-            print("[SERVER] Client requested to close the connection.")
+        elif request.startswith(CLOSE_CONNECTION):
+            print("[!] Client requested to close the connection.")
             
         # Handle the GET protocol
-        elif request.startswith("GET"):
+        elif request.startswith(GET_REQUEST):
             _, file_name, offset, chunk_size = request.split()
             offset = int(offset)
             chunk_size = int(chunk_size)
@@ -36,12 +34,12 @@ def handle_client(connection_socket, input_dir, addr):
                     f.seek(offset)  # Move to the requested offset
                     data = f.read(chunk_size)  # Read the specified chunk
                     connection_socket.sendall(data)
-                    print(f"[SERVER] Sending {len(data)} bytes of '{file_name}' to {addr}")
+                    print(f"[!] Sending {len(data)} bytes of '{file_name}' to {addr}")
             else:
-                connection_socket.sendall(b"FILE_NOT_FOUND")
+                connection_socket.sendall(MESSAGE_FILE_NOT_FOUND)
     finally:
         _connection_ip, _connection_port = addr
-        print(f"[SERVER] Closing the connection of {_connection_ip}:{_connection_port}.")
+        print(f"[!] Closing the connection of {_connection_ip}:{_connection_port}.")
         connection_socket.close()
 
 # Handle the server shutdown gracefully
@@ -61,7 +59,7 @@ def start_server():
     while True:
         connection_socket, addr = server.accept()
         _connection_ip, _connection_port = addr
-        print(f"[SERVER] Connection is accepted from {_connection_ip}:{_connection_port}")
+        print(f"[!] Connection is accepted from {_connection_ip}:{_connection_port}")
         client_thread = threading.Thread(target=handle_client, args=(connection_socket, input_dir, addr))
         client_thread.start()
 
