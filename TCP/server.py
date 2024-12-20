@@ -34,9 +34,10 @@ def handle_client(connection_socket, input_dir, addr):
                     f.seek(offset)  # Move to the requested offset
                     data = f.read(chunk_size)  # Read the specified chunk
                     connection_socket.sendall(data)
-                    print(f"[!] Sending {len(data)} bytes of '{file_name}' to {addr}")
+                    # print(f"[!] Sending {len(data)} bytes of '{file_name}' to {addr}")
             else:
                 connection_socket.sendall(MESSAGE_FILE_NOT_FOUND)
+                print(f"[-] File '{file_name}' not found.")
     finally:
         _connection_ip, _connection_port = addr
         print(f"[!] Closing the connection of {_connection_ip}:{_connection_port}.")

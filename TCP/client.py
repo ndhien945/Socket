@@ -10,9 +10,9 @@ from config.client_config import *
 from client_help import *
 
 downloaded_files = set()
+unavailable_files = set()
 
 
-# TODO: Reduce the number of parameters passed to the function
 def download_chunk(file_name, offset, chunk_size, part_num, output_dir, progress, task_id):
     max_retries = 5
     retry_delay = 3  # seconds
@@ -33,18 +33,24 @@ def download_chunk(file_name, offset, chunk_size, part_num, output_dir, progress
             part_file_path = f"{output_dir}/{file_name}.part_{part_num + 1}"
             with open(part_file_path, "wb") as f:
                 total_received = 0  # Track how many bytes have been received
+                flagFileNotFound = False
                 while True:
                     data = client_socket.recv(buffer_size)
                     if not data:
                         break
                     elif data == MESSAGE_FILE_NOT_FOUND:
-                        print(f"[-] File not found on the server for part {part_num + 1}.")
+                        print(f"[-] File: {file_name} not found on the server for part {part_num + 1}.")
+                        os.remove(part_file_path)
+                        unavailable_files.add(file_name)
+                        flagFileNotFound = True
                         break
                     f.write(data)
                     total_received += len(data)
 
                     # Calculate progress percentage
                     progress.update(task_id, completed=total_received)
+            if flagFileNotFound == True:
+                return # Stop the download if the file is not found
             if (total_received == chunk_size) or (part_num == 3 and total_received == chunk_size):
                 return  # Success, exit the function
         except (ConnectionResetError, socket.error) as e:
@@ -95,12 +101,6 @@ def merge_chunks(file_name, num_parts, output_dir, output_file):
 def is_file_downloaded(file_name, output_dir):
     """
     Check if the file already exists in the output directory.
-
-    Args:
-        file_name (str): Name of the file to check.
-        output_dir (str): Directory where downloaded files are stored.
-
-    Returns:
         bool: True if the file exists, False otherwise.
     """
     output_file = os.path.join(output_dir, file_name)
@@ -149,7 +149,6 @@ def download_file(file_name, file_size, output_dir):
             else:
                 part_chunk_size = chunk_size
             offset = part_num * chunk_size
-
             # Create a thread for each part
             task_id = tasks[part_num]
 
@@ -169,7 +168,8 @@ def download_file(file_name, file_size, output_dir):
 
     # Merge the chunks into the final file
     output_file = os.path.join(output_dir, file_name)
-    merge_chunks(file_name, num_parts, output_dir, output_file)
+    if file_name not in unavailable_files:
+        merge_chunks(file_name, num_parts, output_dir, output_file)
     print("\n")
     print("\n")
 
