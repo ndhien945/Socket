@@ -28,7 +28,7 @@ def download_chunk(file_name, offset, chunk_size, part_num, output_dir, progress
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             client_socket.connect((SERVER_HOST, SERVER_PORT))
             client_ip, client_port = client_socket.getsockname()
-            print(f"[CLIENT] Client IP: {client_ip}, Client Port: {client_port} for part {part_num + 1}")
+            # print(f"[CLIENT] Client IP: {client_ip}, Client Port: {client_port} for part {part_num + 1}")
             
 
             # Send the GET request with file name, offset, and chunk size
@@ -58,7 +58,7 @@ def download_chunk(file_name, offset, chunk_size, part_num, output_dir, progress
             time.sleep(retry_delay)
         finally:
             client_socket.sendall(MESSAGE_CLOSE_CONNECTION)
-            print(f"[CLIENT] Closing the connection {client_ip}:{client_port} for part {part_num + 1}.")
+            # print(f"[CLIENT] Closing the connection {client_ip}:{client_port} for part {part_num + 1}.")
             client_socket.close()
 
     print(f"[-] Failed to download chunk {part_num + 1} of {file_name} after {max_retries} attempts.")

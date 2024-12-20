@@ -17,7 +17,7 @@ def handle_client(connection_socket, input_dir, addr):
         # Receive the client's request
         request = connection_socket.recv(buffer_size).decode('utf-8')
         if not request:
-            print("[SERVER] Empty request received.")
+            print("[!] Empty request received.")
 
         # Handle the CLOSE protocol
         elif request.startswith(CLOSE_CONNECTION):
