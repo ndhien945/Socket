@@ -38,7 +38,7 @@ def handle_client(connection_socket, input_dir, addr):
                     data = f.read(chunk_size)  # Read the specified chunk
                     connection_socket.sendall(data)
             else:
-                connection_socket.sendall(FILE_NOT_FOUND)
+                connection_socket.sendall(MESSAGE_FILE_NOT_FOUND)
     finally:
         _connection_ip, _connection_port = addr
         print(f"[SERVER] Closing the connection of {_connection_ip}:{_connection_port}.")
