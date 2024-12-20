@@ -3,12 +3,11 @@ import threading
 import os
 import sys
 import signal
-from msg import *
 
 HOST_ADDR = "0.0.0.0"
 PORT_NUM = 8080
 input_dir = "server_files"
-buffer_size = 1024
+buffer_size = 1024 * 32
 
 
 # Handle each client request
@@ -17,14 +16,14 @@ def handle_client(connection_socket, input_dir, addr):
         # Receive the client's request
         request = connection_socket.recv(buffer_size).decode('utf-8')
         if not request:
-            print("[!] Empty request received.")
+            print("[SERVER] Empty request received.")
 
         # Handle the CLOSE protocol
-        elif request.startswith(CLOSE_CONNECTION):
+        elif request.startswith("CLOSE"):
             print("[SERVER] Client requested to close the connection.")
             
         # Handle the GET protocol
-        elif request.startswith(GET_REQUEST):
+        elif request.startswith("GET"):
             _, file_name, offset, chunk_size = request.split()
             offset = int(offset)
             chunk_size = int(chunk_size)
@@ -37,8 +36,9 @@ def handle_client(connection_socket, input_dir, addr):
                     f.seek(offset)  # Move to the requested offset
                     data = f.read(chunk_size)  # Read the specified chunk
                     connection_socket.sendall(data)
+                    print(f"[SERVER] Sending {len(data)} bytes of '{file_name}' to {addr}")
             else:
-                connection_socket.sendall(MESSAGE_FILE_NOT_FOUND)
+                connection_socket.sendall(b"FILE_NOT_FOUND")
     finally:
         _connection_ip, _connection_port = addr
         print(f"[SERVER] Closing the connection of {_connection_ip}:{_connection_port}.")
@@ -49,7 +49,7 @@ def shutdown_server(signal, frame):
     print("\n[SERVER] Shutting down the server...")
     server.close()  # Close the server socket
     sys.exit(0)  # Exit the program
-
+    
 # Main server function
 def start_server():
     global server

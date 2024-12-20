@@ -4,15 +4,12 @@ import os
 import time
 import signal
 import sys
-
-from client_help import *
-from msg import *
 from rich.progress import Progress, BarColumn, TextColumn
 
 SERVER_HOST = "127.0.0.1"
 # SERVER_HOST = "192.168.2.7"
 SERVER_PORT = 8080
-buffer_size = 1024
+buffer_size = 1024 * 32
 input_file = "input.txt"
 output_dir = "./downloads"
 downloaded_files = set()
@@ -28,11 +25,11 @@ def download_chunk(file_name, offset, chunk_size, part_num, output_dir, progress
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             client_socket.connect((SERVER_HOST, SERVER_PORT))
             client_ip, client_port = client_socket.getsockname()
-            # print(f"[CLIENT] Client IP: {client_ip}, Client Port: {client_port} for part {part_num + 1}")
+            print(f"[INFO] Client IP: {client_ip}, Client Port: {client_port} for part {part_num + 1}")
             
 
             # Send the GET request with file name, offset, and chunk size
-            request = f"{GET_REQUEST} {file_name} {offset} {chunk_size}"
+            request = f"GET {file_name} {offset} {chunk_size}\n"
             client_socket.send(request.encode('utf-8'))
 
             # Save the chunk to a file and calculate progress
@@ -43,8 +40,8 @@ def download_chunk(file_name, offset, chunk_size, part_num, output_dir, progress
                     data = client_socket.recv(buffer_size)
                     if not data:
                         break
-                    elif data == MESSAGE_FILE_NOT_FOUND:
-                        print(f"[-] File not found on the server for part {part_num + 1}.")
+                    elif data == b"FILE_NOT_FOUND":
+                        print(f"[ERROR] File not found on the server for part {part_num + 1}.")
                         break
                     f.write(data)
                     total_received += len(data)
@@ -54,21 +51,21 @@ def download_chunk(file_name, offset, chunk_size, part_num, output_dir, progress
             if (total_received == chunk_size) or (part_num == 3 and total_received == chunk_size):
                 return  # Success, exit the function
         except (ConnectionResetError, socket.error) as e:
-            print(f"[-] Connection error: {e}. Retrying ({attempt + 1}/{max_retries})...")
+            print(f"[ERROR] Connection error: {e}. Retrying ({attempt + 1}/{max_retries})...")
             time.sleep(retry_delay)
         finally:
-            client_socket.sendall(MESSAGE_CLOSE_CONNECTION)
-            # print(f"[CLIENT] Closing the connection {client_ip}:{client_port} for part {part_num + 1}.")
+            client_socket.sendall(b"CLOSE CONNECTION")
+            print(f"[CLIENT] Closing the connection {client_ip}:{client_port} for part {part_num + 1}.")
             client_socket.close()
 
-    print(f"[-] Failed to download chunk {part_num + 1} of {file_name} after {max_retries} attempts.")
+    print(f"[ERROR] Failed to download chunk {part_num + 1} of {file_name} after {max_retries} attempts.")
     # Explicitly notify the server when closing the connection due to failure (open new socket to send message)
     try:
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client.connect((SERVER_HOST, SERVER_PORT))
-        client_socket.sendall(MESSAGE_CLOSE_CONNECTION)
+        client_socket.sendall(b"CLOSE CONNECTION")
     except Exception as e:
-        print(f"[-] Unable to notify server: {e}")
+        print(f"[ERROR] Unable to notify server: {e}")
     finally:
         client.close()
 
@@ -79,10 +76,10 @@ def merge_chunks(file_name, num_parts, output_dir, output_file):
     for i in range(num_parts):
         part_file_path = f"{output_dir}/{file_name}.part_{i + 1}"
         if not os.path.exists(part_file_path):
-            print(f"[-] Missing part {i + 1} for {file_name}. Cannot merge.")
+            print(f"[CLIENT][ERROR] Missing part {i + 1} for {file_name}. Cannot merge.")
             return  # Stop if any part is missing
         if os.path.getsize(part_file_path) == 0:
-            print(f"[-] Part {i + 1} of {file_name} is incomplete. Cannot merge.")
+            print(f"[CLIENT][ERROR] Part {i + 1} of {file_name} is incomplete. Cannot merge.")
             return  # Stop if any part is incomplete
     
     # Proceed to merge if all parts are complete
@@ -96,7 +93,7 @@ def merge_chunks(file_name, num_parts, output_dir, output_file):
             with open(part_file_path, "rb") as part_file:
                 final_file.write(part_file.read())
             os.remove(part_file_path)
-    print(f"[CLIENT] Merged all parts of {file_name} into {output_file}")
+    print(f"[CLIENT][INFO] Merged all parts of {file_name} into {output_file}")
 
 def is_file_downloaded(file_name, output_dir):
     """
@@ -115,7 +112,7 @@ def is_file_downloaded(file_name, output_dir):
 def download_file(file_name, file_size, output_dir):
     # Check if the file already exists
     if is_file_downloaded(file_name, output_dir):
-        print(f"[!] {file_name} already exists in {output_dir}. Skipping download.")
+        print(f"[CLIENT][NOTIFICATION] {file_name} already exists in {output_dir}. Skipping download.")
         print("\n")
         print("\n")
         return  # Skip download if file already exists
@@ -140,7 +137,7 @@ def download_file(file_name, file_size, output_dir):
             else:
                 part_chunk_size = chunk_size
             task_id = progress.add_task(
-                f"[%] Downloading {file_name} part {part_num + 1}",
+                f"Downloading {file_name} part {part_num + 1}",
                     filename=f"{file_name} part {part_num + 1}",
                     total=part_chunk_size,
                     completed=0,
@@ -198,7 +195,7 @@ def monitor_and_download():
     
     # Define a signal handler to handle Ctrl+C gracefull
     def signal_handler(signum, frame):
-        print("\n[CLIENT] Shutting down monitoring... Goodbye!")
+        print("\n[CLIENT][INFO] Shutting down monitoring... Goodbye!")
         sys.exit(0)  # Exit the program
 
     # Register the signal handler for SIGINT (Ctrl+C)
@@ -215,21 +212,18 @@ def monitor_and_download():
 
                 # Check if the file has already been downloaded
                 if file_name not in downloaded_files:
-                    print(f"[!] New file detected: {file_name}")
+                    print(f"[CLIENT][NOTIFICATION] New file detected: {file_name}")
                     download_file(file_name, file_size, output_dir)
                     downloaded_files.add(file_name)
         except Exception as e:
-            print(f"[-] Failed to process input file: {e}")
+            print(f"[CLIENT][ERROR] Failed to process input file: {e}")
 
         # numberAttempts += 1
-        print("[*] Waiting for new request of downloading new file(s)...")
+        print("[CLIENT][INFO] Waiting for new request of downloading new file(s)...")
         time.sleep(5)  # Check for new files every 5 seconds
 
 
 # Download multiple files from the server
 # TODO: Modify code to serve numparts = 4 (not the fixed chunk size)
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] in ["-h", "?"]:
-        print_help()
-    else:
-        monitor_and_download()
+    monitor_and_download()
