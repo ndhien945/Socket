@@ -4,6 +4,8 @@ import socket
 import time
 import signal
 import sys
+from msg import *
+from client_help import *
 from rich.progress import Progress, BarColumn, TextColumn
 
 from helper import mk_chksum, mk_packet, notcorrupt, switch_seq, send_pkt, has_seq, unpacker, extract, BUFFER_SIZE
@@ -32,7 +34,7 @@ def download_chunk(client_socket, file_name, offset, chunk_size, part_num, progr
     with open(part_file_path, "wb") as f:
         while retries > 0:
             try:
-                data = f"GET {file_name} {offset} {chunk_size}".encode("utf-8")
+                data = f"{GET_REQUEST} {file_name} {offset} {chunk_size}".encode("utf-8")
                 chksum = mk_chksum((0, expected_seq, data))
                 packet = mk_packet((0, expected_seq, data, chksum))
 
@@ -64,14 +66,14 @@ def download_chunk(client_socket, file_name, offset, chunk_size, part_num, progr
                         chksum = mk_chksum((1, switch_seq(expected_seq), ack_msg))
                         packet = mk_packet((1, switch_seq(expected_seq), ack_msg, chksum))
                         send_pkt(packet, (SERVER_HOST, SERVER_PORT))
-                        print("[CLIENT] Checksum mismatch or wrong sequence. Retrying...")
+                        print("[-] Checksum mismatch or wrong sequence. Retrying...")
                         retries -= 1
                         break
                 return
             except socket.timeout:
                 retries -= 1
-                print("[CLIENT] Timeout. Retrying...")
-    print(f"[ERROR] Failed to download part {part_num + 1} after retries.")
+                print("[*] Timeout. Retrying...")
+    print(f"[-] Failed to download part {part_num + 1} after retries.")
 
 
 def merge_chunks(file_name, num_parts):
@@ -83,7 +85,7 @@ def merge_chunks(file_name, num_parts):
             with open(part_file_path, "rb") as part_file:
                 final_file.write(part_file.read())
             os.remove(part_file_path)
-    print(f"[INFO] Successfully merged file: {output_file}")
+    print(f"[CLIENT] Successfully merged file: {output_file}")
 
 
 def is_file_downloaded(file_name):
@@ -98,7 +100,7 @@ def is_file_downloaded(file_name):
 def download_file(file_name, file_size, output_dir):
      # Check if the file already exists
     if is_file_downloaded(file_name):
-        print(f"[CLIENT][NOTIFICATION] {file_name} already exists in {output_dir}. Skipping download.")
+        print(f"[!] {file_name} already exists in {output_dir}. Skipping download.")
         print("\n")
         print("\n")
         return  # Skip download if file already exists
@@ -122,7 +124,7 @@ def download_file(file_name, file_size, output_dir):
             for part_num in range(num_parts):
                 part_chunk_size = last_chunk_size if part_num == num_parts - 1 else chunk_size
                 task_id = progress.add_task(
-                    f"Downloading {file_name} part {part_num + 1}",
+                    f"[%] Downloading {file_name} part {part_num + 1}",
                     filename=f"{file_name} part {part_num + 1}",
                     total=part_chunk_size,
                     completed=0,
@@ -134,7 +136,7 @@ def download_file(file_name, file_size, output_dir):
                 download_chunk(client_socket, file_name, offset, part_chunk_size, part_num, progress, task_id)
         
         # Close the socket
-        data = f"CLOSE".encode("utf-8")
+        data = (CLOSE_CONNECTION).encode("utf-8")
         chksum = mk_chksum((0, expected_seq, data))
         packet = mk_packet((0, expected_seq, data, chksum))
                            
@@ -162,7 +164,7 @@ def monitor_and_download():
     
     # Define a signal handler to handle Ctrl+C gracefull
     def signal_handler(signum, frame):
-        print("\n[CLIENT][INFO] Shutting down monitoring... Goodbye!")
+        print("\n[CLIENT] Shutting down monitoring... Goodbye!")
         sys.exit(0)  # Exit the program
 
     # Register the signal handler for SIGINT (Ctrl+C)
@@ -178,14 +180,17 @@ def monitor_and_download():
 
                 # Check if the file has already been downloaded
                 if file_name not in downloaded_files:
-                    print(f"[CLIENT][NOTIFICATION] New file detected: {file_name}")
+                    print(f"[!] New file detected: {file_name}")
                     download_file(file_name, file_size, OUTPUT_DIR)
                     downloaded_files.add(file_name)
         except Exception as e:
-            print(f"[CLIENT][ERROR] Failed to process input file: {e}")
+            print(f"[-] Failed to process input file: {e}")
 
-        print("[CLIENT][INFO] Waiting for new request of downloading new file(s)...")
+        print("[*] Waiting for new request of downloading new file(s)...")
         time.sleep(5)  # Check for new files every 5 seconds
 
 if __name__ == "__main__":
-    monitor_and_download()
+    if len(sys.argv) > 1 and sys.argv[1] in ["-h", "?"]:
+        print_help()
+    else:
+        monitor_and_download()
