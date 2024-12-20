@@ -11,6 +11,7 @@ from config.client_config import *
 from helper import mk_chksum, mk_packet, notcorrupt, switch_seq, send_pkt, has_seq, unpacker, extract, BUFFER_SIZE
 
 downloaded_files = set()
+unavailable_files = set()
 
 interval = 0.009  # Timeout interval
 expected_seq = 0  # Sequence number
@@ -34,16 +35,23 @@ def download_chunk(client_socket, file_name, offset, chunk_size, part_num, progr
                 # Send the packet for the first time
                 send_pkt(client_socket, packet, (SERVER_HOST, SERVER_PORT))
                 
+                flagFileNotFound = False
                 # Receive data
                 while total_received < chunk_size:
-                    # response, _ = client_socket.recvfrom(BUFFER_SIZE)
                     response, _ = client_socket.recvfrom(BUFFER_SIZE + 32 + 4 + 4)
                     rcvd_packet = unpacker.unpack(response)
+                    if not response:
+                        break
                     # Check if the recieved packet has been corrupted and has the correct sequence number
                     if notcorrupt(rcvd_packet) and has_seq(rcvd_packet, expected_seq):
                         remaining_size = chunk_size - total_received
                         data = extract(rcvd_packet)
-                        # print("data IS THIS: ", data)
+                        if not data:
+                            break
+                        elif MESSAGE_FILE_NOT_FOUND in data:
+                            print(f"[-] File not found on the server for part {part_num + 1}.")
+                            flagFileNotFound = True
+                            break
                         data_to_write = data[:remaining_size]
                         f.write(data_to_write)
                         total_received += len(data_to_write)
@@ -64,6 +72,10 @@ def download_chunk(client_socket, file_name, offset, chunk_size, part_num, progr
                         print("[-] Checksum mismatch or wrong sequence. Retrying...")
                         retries -= 1
                         break
+                if flagFileNotFound == True:
+                    os.remove(part_file_path)
+                    unavailable_files.add(file_name)
+                    break
                 return
             except socket.timeout:
                 retries -= 1
@@ -96,7 +108,6 @@ def download_file(file_name, file_size, output_dir):
      # Check if the file already exists
     if is_file_downloaded(file_name):
         print(f"[!] {file_name} already exists in {output_dir}. Skipping download.")
-        print("\n")
         print("\n")
         return  # Skip download if file already exists
 
@@ -139,7 +150,8 @@ def download_file(file_name, file_size, output_dir):
         send_pkt(client_socket, packet, (SERVER_HOST, SERVER_PORT))
         client_socket.close()
 
-    merge_chunks(file_name, num_parts)
+    if file_name not in unavailable_files:
+        merge_chunks(file_name, num_parts)
 
 def read_file_to_list(file_path):
     file_list = []
@@ -151,7 +163,6 @@ def read_file_to_list(file_path):
 
 # Monitor `input.txt` for new files and download them
 def monitor_and_download():
-    global downloaded_files
 
     # Create the output directory if it does not exist
     if not os.path.exists(OUTPUT_DIR):
@@ -174,7 +185,7 @@ def monitor_and_download():
                 file_size = file_info["size"]
 
                 # Check if the file has already been downloaded
-                if file_name not in downloaded_files:
+                if file_name not in downloaded_files and file_name not in unavailable_files:
                     print(f"[!] New file detected: {file_name}")
                     download_file(file_name, file_size, OUTPUT_DIR)
                     downloaded_files.add(file_name)

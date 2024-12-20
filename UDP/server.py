@@ -64,7 +64,7 @@ def send_file_rdt(server_sock, addr, file_path, offset, chunk_size):
                 send_pkt(server_sock, packet, addr)
                 if listen_for_ack(server_sock):  # Wait for valid acknowledgment
                     total_sent += len(data)
-                    print(f"[SERVER] Sent {len(data)} bytes. Total sent: {total_sent}/{chunk_size}")
+                    # print(f"[SERVER] Sent {len(data)} bytes. Total sent: {total_sent}/{chunk_size}")
                     break  # Proceed to next data chunk
 
 def handle_client_request(request, addr, server_sock):
@@ -79,7 +79,10 @@ def handle_client_request(request, addr, server_sock):
             print(f"[!] Handling file request: {file_name}")
             send_file_rdt(server_sock, addr, file_path, offset, chunk_size)
         else:
-            server_sock.sendto(MESSAGE_FILE_NOT_FOUND, addr)
+            data = MESSAGE_FILE_NOT_FOUND
+            chksum = mk_chksum((0, expected_seq, data))
+            packet = mk_packet((0, expected_seq, data, chksum))
+            send_pkt(server_sock, packet, addr)
             print(f"[-] File '{file_name}' not found.")
     elif request.startswith("CLOSE"):
         print(f"[SERVER] Client {addr} requested to close the connection.")
