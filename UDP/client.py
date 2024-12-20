@@ -63,6 +63,8 @@ def download_chunk(client_socket, file_name, offset, chunk_size, part_num, progr
                         send_pkt(client_socket, ack_packet, (SERVER_HOST, SERVER_PORT))
                         expected_seq = switch_seq(expected_seq)
                     else:
+                        # When packet loss or corruption occurs or wrong sequence number (duplicate packet)
+                        # Acknowledge reception
                         chksum = mk_chksum((1, switch_seq(expected_seq), ack_msg))
                         packet = mk_packet((1, switch_seq(expected_seq), ack_msg, chksum))
                         send_pkt(packet, (SERVER_HOST, SERVER_PORT))
