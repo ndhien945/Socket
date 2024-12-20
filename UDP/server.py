@@ -4,13 +4,9 @@ import os
 import signal
 import sys
 from msg import *
+from config.server_config import *
 from helper import mk_chksum, mk_packet, notcorrupt, switch_seq, has_seq, unpacker, extract, BUFFER_SIZE
 
-# Server Configuration
-HOST_ADDR = "0.0.0.0"
-PORT_NUM = 5000
-BUFFER_SIZE = 1024 * 8
-INPUT_DIR = "server_files"
 
 # Global Sequence Number
 expected_seq = 0

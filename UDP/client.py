@@ -7,16 +7,9 @@ import sys
 from msg import *
 from client_help import *
 from rich.progress import Progress, BarColumn, TextColumn
-
+from config.client_config import *
 from helper import mk_chksum, mk_packet, notcorrupt, switch_seq, send_pkt, has_seq, unpacker, extract, BUFFER_SIZE
 
-# Client Configuration
-
-# Configuration
-SERVER_HOST = "127.0.0.1"
-SERVER_PORT = 5000
-INPUT_FILE = "input.txt"
-OUTPUT_DIR = "./downloads"
 downloaded_files = set()
 
 interval = 0.009  # Timeout interval
