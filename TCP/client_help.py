@@ -1,0 +1,25 @@
+def print_help():
+    """
+    Prints the list of supported protocols and actions that the client can perform.
+    """
+    print("=" * 30)
+    print("The client will automatically detect and download new files listed in the input.txt.")
+    print("[CLIENT HELP]")
+    print("-h, ?   Show this help message.")
+    print("[!] NOFITICATION message.")
+    print("[+] SUCCESS message.")
+    print("[*] PROCESSING/INFORMATION message.")
+    print("[?] REQUEST message.")
+    print("[-] ERROR message.")
+    print("[%] PROGRESS message.")
+    print("[CLIENT] NORMAL INFORMATION message.")
+    print("=" * 30)
+    print("Discrible the protocol:")
+    print("1. Client will send a MESSAGE_GET_REQUEST request to the server to download a file.")
+    print("protocol: MESSAGE_GET_REQUEST <file_name> <offset> <chunk_size>")
+    print("<file_name> is the name of the file to download.")
+    print("<offset> is the starting byte index in the file.")
+    print("<chunk_size> is the number of bytes to download.")
+    print("2. Client will send a MESSAGE_CLOSE_CONNECTION request to the server to close the connection.")
+    print("3. Client will receive a MESSAGE_FILE_NOT_FOUND response from the server if the requested file is not found.")
+    print("=" * 30)

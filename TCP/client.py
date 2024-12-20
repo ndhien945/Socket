@@ -7,6 +7,7 @@ import sys
 from rich.progress import Progress, BarColumn, TextColumn
 from msg import *
 from config.client_config import *
+from client_help import *
 
 downloaded_files = set()
 
@@ -222,4 +223,7 @@ def monitor_and_download():
 # Download multiple files from the server
 # TODO: Modify code to serve numparts = 4 (not the fixed chunk size)
 if __name__ == "__main__":
-    monitor_and_download()
+    if len(sys.argv) > 1 and sys.argv[1] in ["-h", "?"]:
+        print_help()
+    else:
+        monitor_and_download()
