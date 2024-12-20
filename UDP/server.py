@@ -3,6 +3,7 @@ import socket
 import os
 import signal
 import sys
+from msg import *
 from helper import mk_chksum, mk_packet, notcorrupt, switch_seq, has_seq, unpacker, extract, BUFFER_SIZE
 
 # Server Configuration
@@ -40,9 +41,9 @@ def listen_for_ack(server_sock):
                 expected_seq = switch_seq(expected_seq)  # Toggle sequence
                 return True
             else:
-                print(f"[SERVER] Invalid ACK or corruption detected. Resending data.")
+                print(f"[-] Invalid ACK or corruption detected. Resending data.")
         except socket.timeout:
-            print("[SERVER] ACK timeout. Resending data.")
+            print("[-] ACK timeout. Resending data.")
             print('\n')
             return False
 
@@ -72,18 +73,18 @@ def send_file_rdt(server_sock, addr, file_path, offset, chunk_size):
 
 def handle_client_request(request, addr, server_sock):
     """Handle client requests."""
-    if request.startswith("GET"):
+    if request.startswith(GET_REQUEST):
         _, file_name, offset, chunk_size = request.split()
         offset = int(offset)
         chunk_size = int(chunk_size)
 
         file_path = os.path.join(INPUT_DIR, file_name)
         if os.path.exists(file_path):
-            print(f"[SERVER] Handling file request: {file_name}")
+            print(f"[!] Handling file request: {file_name}")
             send_file_rdt(server_sock, addr, file_path, offset, chunk_size)
         else:
-            server_sock.sendto(b"FILE_NOT_FOUND", addr)
-            print(f"[SERVER] File '{file_name}' not found.")
+            server_sock.sendto(MESSAGE_FILE_NOT_FOUND, addr)
+            print(f"[-] File '{file_name}' not found.")
     elif request.startswith("CLOSE"):
         print(f"[SERVER] Client {addr} requested to close the connection.")
 
@@ -114,7 +115,7 @@ def start_server():
         except socket.timeout:
             continue
         except Exception as e:
-            print(f"[SERVER] Server error: {e}")
+            print(f"[-] Server error: {e}")
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, shutdown_server)
