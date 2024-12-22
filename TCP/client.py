@@ -38,10 +38,8 @@ def download_chunk(file_name, offset, chunk_size, part_num, output_dir, progress
                     data = client_socket.recv(buffer_size)
                     if not data:
                         break
-                    elif data == MESSAGE_FILE_NOT_FOUND:
+                    elif MESSAGE_FILE_NOT_FOUND in data:
                         print(f"[-] File: {file_name} not found on the server for part {part_num + 1}.")
-                        os.remove(part_file_path)
-                        unavailable_files.add(file_name)
                         flagFileNotFound = True
                         break
                     f.write(data)
@@ -50,6 +48,8 @@ def download_chunk(file_name, offset, chunk_size, part_num, output_dir, progress
                     # Calculate progress percentage
                     progress.update(task_id, completed=total_received)
             if flagFileNotFound == True:
+                os.remove(part_file_path)
+                unavailable_files.add(file_name)
                 return # Stop the download if the file is not found
             if (total_received == chunk_size) or (part_num == 3 and total_received == chunk_size):
                 return  # Success, exit the function
