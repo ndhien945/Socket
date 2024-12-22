@@ -5,7 +5,7 @@ import signal
 import sys
 from msg import *
 from config.server_config import *
-from helper import mk_chksum, mk_packet, notcorrupt, switch_seq, has_seq, unpacker, extract, BUFFER_SIZE
+from helper import mk_chksum, mk_packet, notcorrupt, switch_seq, has_seq, unpacker, extract
 
 
 # Global Sequence Number
@@ -79,7 +79,7 @@ def handle_client_request(request, addr, server_sock):
             print(f"[!] Handling file request: {file_name}")
             send_file_rdt(server_sock, addr, file_path, offset, chunk_size)
         else:
-            data = MESSAGE_FILE_NOT_FOUND
+            data = (FILE_NOT_FOUND).encode("utf-8")
             chksum = mk_chksum((0, expected_seq, data))
             packet = mk_packet((0, expected_seq, data, chksum))
             send_pkt(server_sock, packet, addr)
@@ -117,5 +117,6 @@ def start_server():
             print(f"[-] Server error: {e}")
 
 if __name__ == "__main__":
+    print(BUFFER_SIZE)
     signal.signal(signal.SIGINT, shutdown_server)
     start_server()

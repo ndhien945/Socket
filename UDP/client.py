@@ -8,7 +8,7 @@ from msg import *
 from client_help import *
 from rich.progress import Progress, BarColumn, TextColumn
 from config.client_config import *
-from helper import mk_chksum, mk_packet, notcorrupt, switch_seq, send_pkt, has_seq, unpacker, extract, BUFFER_SIZE
+from helper import mk_chksum, mk_packet, notcorrupt, switch_seq, send_pkt, has_seq, unpacker, extract
 
 downloaded_files = set()
 unavailable_files = set()
@@ -63,15 +63,15 @@ def download_chunk(client_socket, file_name, offset, chunk_size, part_num, progr
                         ack_packet = mk_packet((1, expected_seq, ack_msg, chksum))
                         send_pkt(client_socket, ack_packet, (SERVER_HOST, SERVER_PORT))
                         expected_seq = switch_seq(expected_seq)
-                    else:
+                    elif notcorrupt(rcvd_packet) and not has_seq(rcvd_packet, expected_seq):
                         # When packet loss or corruption occurs or wrong sequence number (duplicate packet)
                         # Acknowledge reception
                         chksum = mk_chksum((1, switch_seq(expected_seq), ack_msg))
                         packet = mk_packet((1, switch_seq(expected_seq), ack_msg, chksum))
                         send_pkt(packet, (SERVER_HOST, SERVER_PORT))
-                        print("[-] Checksum mismatch or wrong sequence. Retrying...")
-                        retries -= 1
-                        break
+                        print("[-] Wrong sequence. This is duplicate packet. Acknowledging previous packet.")
+                    else:
+                        print("[-] Corrupted packet.")
                 if flagFileNotFound == True:
                     os.remove(part_file_path)
                     unavailable_files.add(file_name)
@@ -80,6 +80,7 @@ def download_chunk(client_socket, file_name, offset, chunk_size, part_num, progr
             except socket.timeout:
                 retries -= 1
                 print("[*] Timeout. Retrying...")
+                os.remove(part_file_path)
     print(f"[-] Failed to download part {part_num + 1} after retries.")
 
 
@@ -196,6 +197,7 @@ def monitor_and_download():
         time.sleep(5)  # Check for new files every 5 seconds
 
 if __name__ == "__main__":
+    print(BUFFER_SIZE)
     if len(sys.argv) > 1 and sys.argv[1] in ["-h", "?"]:
         print_help()
     else:

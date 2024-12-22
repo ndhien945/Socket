@@ -1,9 +1,11 @@
 # helper.py
 import hashlib
 import struct
+from config.server_config import *
+from config.client_config import *
+
 
 # Shared Configuration
-BUFFER_SIZE = 1024 * 8
 unpacker = struct.Struct(f'I I {BUFFER_SIZE}s 32s')
 ack_unpacker = struct.Struct('I I')  # Acknowledgments only have ack_num and seq_num
 
@@ -24,8 +26,8 @@ def mk_packet(values_with_chksum):
     UDP_Data = struct.Struct(f'I I {BUFFER_SIZE}s 32s')
     ack_num, seq_num, data, chksum = values_with_chksum
 
-    # Truncate or pad data to 8192 bytes
-    data = data[:8192].ljust(8192, b'\x00')
+    # Truncate or pad data to BUFFER_SIZE bytes
+    data = data[:BUFFER_SIZE].ljust(BUFFER_SIZE, b'\x00')
     # Truncate or pad checksum to 32 bytes
     chksum = chksum[:32].ljust(32, b'\x00')
 
@@ -36,7 +38,7 @@ def notcorrupt(UDP_Packet):
     """Check if a packet is corrupted."""
     ack_num, seq_num, data, chksum = UDP_Packet
     # Truncate or pad data and calculate checksum
-    data = data[:8192].ljust(8192, b'\x00')
+    data = data[:BUFFER_SIZE].ljust(BUFFER_SIZE, b'\x00')
     calculated_chksum = mk_chksum((ack_num, seq_num, data))
 
     # Compare with received checksum
@@ -55,7 +57,7 @@ def switch_seq(seq):
 
 def extract(UDP_Packet):
     """Extract data from a packet."""
-    return UDP_Packet[2][:8192].rstrip(b'\x00')
+    return UDP_Packet[2][:BUFFER_SIZE].rstrip(b'\x00')
 
 def deliver(data):
     """Deliver data upwards."""
