@@ -197,7 +197,7 @@ def monitor_and_download():
         time.sleep(5)  # Check for new files every 5 seconds
 
 if __name__ == "__main__":
-    print(BUFFER_SIZE)
+    # print(BUFFER_SIZE)
     if len(sys.argv) > 1 and sys.argv[1] in ["-h", "?"]:
         print_help()
     else:
