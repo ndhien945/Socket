@@ -117,6 +117,6 @@ def start_server():
             print(f"[-] Server error: {e}")
 
 if __name__ == "__main__":
-    print(BUFFER_SIZE)
+    # print(BUFFER_SIZE)
     signal.signal(signal.SIGINT, shutdown_server)
     start_server()
